@@ -1,0 +1,734 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hệ thống Giám sát Rung động Máy móc</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: #333;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            color: white;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .header p {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+
+        .dashboard {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .card {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            transition: transform 0.3s ease;
+        }
+
+        .card:hover {
+            transform: translateY(-5px);
+        }
+
+        .card h3 {
+            color: #4a5568;
+            margin-bottom: 20px;
+            font-size: 1.3rem;
+            border-bottom: 2px solid #e2e8f0;
+            padding-bottom: 10px;
+        }
+
+        .device-selector {
+            margin-bottom: 20px;
+        }
+
+        .device-selector select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 1rem;
+            background: white;
+            transition: border-color 0.3s ease;
+        }
+
+        .device-selector select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .chart-container {
+            position: relative;
+            height: 400px;
+            width: 100%;
+            margin-bottom: 20px;
+        }
+
+        .device-chart-card {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+
+        .device-chart-card h4 {
+            color: #4a5568;
+            margin-bottom: 15px;
+            font-size: 1.2rem;
+            border-bottom: 2px solid #e2e8f0;
+            padding-bottom: 10px;
+        }
+
+        .status-indicators {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .status-card {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            text-align: center;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+
+        .status-value {
+            font-size: 2rem;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .status-label {
+            color: #666;
+            font-size: 0.9rem;
+        }
+
+        .normal { color: #48bb78; }
+        .warning { color: #ed8936; }
+        .critical { color: #f56565; }
+
+        .alerts-section {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        }
+
+        .alert-item {
+            padding: 15px;
+            margin-bottom: 10px;
+            border-radius: 8px;
+            border-left: 4px solid;
+        }
+
+        .alert-critical {
+            background: #fed7d7;
+            border-left-color: #f56565;
+        }
+
+        .alert-high {
+            background: #feebc8;
+            border-left-color: #ed8936;
+        }
+
+        .alert-medium {
+            background: #fef5e7;
+            border-left-color: #f6e05e;
+        }
+
+        .alert-low {
+            background: #f0fff4;
+            border-left-color: #48bb78;
+        }
+
+        .no-data {
+            text-align: center;
+            color: #666;
+            font-style: italic;
+            padding: 40px;
+        }
+
+        .loading {
+            text-align: center;
+            color: #667eea;
+            font-size: 1.1rem;
+        }
+
+        @media (max-width: 768px) {
+            .dashboard {
+                grid-template-columns: 1fr;
+            }
+            
+            .header h1 {
+                font-size: 2rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔧 Hệ thống Giám sát Rung động Máy móc</h1>
+            <p>Giám sát thời gian thực và phát hiện độ rung bất thường</p>
+        </div>
+
+        <div class="card">
+            <h3>📊 Biểu đồ tất cả node </h3>
+            <div style="display:flex; gap:10px; align-items:center; margin:10px 0 20px 0; flex-wrap: wrap;">
+                <span style="color:#4a5568; font-weight:600;">Khoảng thời gian:</span>
+                <button class="range-btn" data-hours="3">3 giờ</button>
+                <button class="range-btn" data-hours="24">1 ngày</button>
+                <button class="range-btn" data-hours="72">3 ngày</button>
+                <button class="range-btn" data-hours="168">1 tuần</button>
+                <button class="range-btn" data-hours="720">1 tháng</button>
+                <button class="range-btn" data-hours="8760">1 năm</button>
+                <button id="autoRefreshToggle" style="margin-left:20px; padding:8px 12px; border-radius:8px; border:2px solid #48bb78; background:#48bb78; color:#fff; cursor:pointer;">Tự động: BẬT</button>
+                <span id="rangeStatus" style="margin-left:auto; color:#666; font-size:0.9rem;"></span>
+            </div>
+            <div id="allCharts">
+                <div class="no-data">Đang tải thiết bị...</div>
+            </div>
+        </div>
+
+        <!-- Alerts Section -->
+        <div class="alerts-section">
+            <h3>🚨 Cảnh báo Rung động</h3>
+            <div id="alertsList">
+                <div class="loading">Đang tải cảnh báo...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global variables
+        let socket;
+        const deviceCharts = new Map(); // device_id -> { chart, device }
+        let currentRangeHours = 24;
+        let rangeChangeTimer = null;
+        let autoRefreshInterval = null;
+        let autoRefreshEnabled = true;
+
+        // Initialize application
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('🚀 Application starting...');
+            
+            try {
+                console.log('🔌 Initializing socket...');
+                initializeSocket();
+                
+                console.log('📱 Loading devices...');
+                loadDevicesAndRenderAll();
+
+                initRangeButtons();
+                initAutoRefreshToggle();
+                updateRangeStatus();
+                
+                console.log('🚨 Loading alerts...');
+                loadAlerts();
+                
+                // Start auto-refresh
+                startAutoRefresh();
+                
+                console.log('✅ Application initialized successfully');
+            } catch (error) {
+                console.error('❌ Application initialization failed:', error);
+            }
+        });
+
+        // Initialize Socket.IO connection
+        function initializeSocket() {
+            console.log('🔌 Creating socket connection...');
+            socket = io();
+            
+            socket.on('connect', function() {
+                console.log('✅ Connected to server');
+            });
+
+            socket.on('sensor_data', function(data) {
+                console.log('📡 Received realtime data:', data);
+                const chartInfo = deviceCharts.get(data.device_id);
+                if (!chartInfo) {
+                    console.log('⚠️ No chart found for device:', data.device_id);
+                    return;
+                }
+                console.log('✅ Adding data to chart for device:', data.device_id);
+                appendRealtimePoint(chartInfo, data);
+            });
+
+            socket.on('disconnect', function() {
+                console.log('❌ Disconnected from server');
+            });
+
+            socket.on('connect_error', function(error) {
+                console.error('❌ Socket connection error:', error);
+            });
+        }
+
+        // Init range selector buttons
+        function initRangeButtons() {
+            const buttons = document.querySelectorAll('.range-btn');
+            buttons.forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const hours = parseInt(btn.getAttribute('data-hours'));
+                    if (!isNaN(hours) && hours !== currentRangeHours) {
+                        currentRangeHours = hours;
+                        highlightActiveRangeButton();
+                        updateRangeStatus();
+                        // Debounce reload
+                        if (rangeChangeTimer) clearTimeout(rangeChangeTimer);
+                        rangeChangeTimer = setTimeout(() => {
+                            reloadAllHistorical();
+                            // cũng cập nhật phạm vi cảnh báo theo khoảng chọn (giới hạn tối đa 168 giờ để tránh quá nặng)
+                            loadAlerts();
+                        }, 300);
+                    }
+                });
+            });
+            highlightActiveRangeButton();
+        }
+
+        function highlightActiveRangeButton() {
+            document.querySelectorAll('.range-btn').forEach(b => {
+                if (parseInt(b.getAttribute('data-hours')) === currentRangeHours) {
+                    b.style.background = '#667eea';
+                    b.style.color = '#fff';
+                    b.style.border = 'none';
+                    b.style.padding = '8px 12px';
+                    b.style.borderRadius = '8px';
+                } else {
+                    b.style.background = '#fff';
+                    b.style.color = '#4a5568';
+                    b.style.border = '2px solid #e2e8f0';
+                    b.style.padding = '8px 12px';
+                    b.style.borderRadius = '8px';
+                }
+            });
+        }
+
+        function updateRangeStatus() {
+            const el = document.getElementById('rangeStatus');
+            if (!el) return;
+            el.textContent = `Phạm vi: ${formatHoursLabel(currentRangeHours)}`;
+        }
+
+        function formatHoursLabel(hours) {
+            if (hours === 3) return '3 giờ';
+            if (hours === 24) return '1 ngày';
+            if (hours === 72) return '3 ngày';
+            if (hours === 168) return '1 tuần';
+            if (hours === 720) return '1 tháng';
+            if (hours === 8760) return '1 năm';
+            return `${hours} giờ`;
+        }
+
+        function reloadAllHistorical() {
+            deviceCharts.forEach((chartInfo, deviceId) => {
+                loadHistoricalForDevice(deviceId);
+                // Also update time range for existing charts
+                updateChartTimeRange(chartInfo.chart);
+            });
+        }
+
+        // Auto-refresh functions
+        function startAutoRefresh() {
+            // Clear existing interval
+            if (autoRefreshInterval) {
+                clearInterval(autoRefreshInterval);
+            }
+            
+            if (!autoRefreshEnabled) {
+                console.log('⏸️ Auto-refresh disabled');
+                return;
+            }
+            
+            // Auto-refresh every 30 seconds
+            autoRefreshInterval = setInterval(() => {
+                if (autoRefreshEnabled) {
+                    console.log('🔄 Auto-refreshing data...');
+                    reloadAllHistorical();
+                    loadAlerts();
+                }
+            }, 30000);
+            
+            console.log('✅ Auto-refresh started (30s interval)');
+        }
+
+        function stopAutoRefresh() {
+            if (autoRefreshInterval) {
+                clearInterval(autoRefreshInterval);
+                autoRefreshInterval = null;
+                console.log('⏹️ Auto-refresh stopped');
+            }
+        }
+
+        // Initialize auto-refresh toggle button
+        function initAutoRefreshToggle() {
+            const toggleBtn = document.getElementById('autoRefreshToggle');
+            if (!toggleBtn) return;
+            
+            toggleBtn.addEventListener('click', () => {
+                autoRefreshEnabled = !autoRefreshEnabled;
+                
+                if (autoRefreshEnabled) {
+                    startAutoRefresh();
+                    toggleBtn.textContent = 'Tự động: BẬT';
+                    toggleBtn.style.background = '#48bb78';
+                    toggleBtn.style.borderColor = '#48bb78';
+                } else {
+                    stopAutoRefresh();
+                    toggleBtn.textContent = 'Tự động: TẮT';
+                    toggleBtn.style.background = '#f56565';
+                    toggleBtn.style.borderColor = '#f56565';
+                }
+            });
+        }
+
+        // Create per-device chart card (one chart per row)
+        function createDeviceChartCard(device) {
+            const card = document.createElement('div');
+            card.className = 'device-chart-card';
+            
+            const title = document.createElement('h4');
+            title.textContent = `${device.device_name || device.device_id} — ${device.location || 'Unknown'}`;
+            
+            const container = document.createElement('div');
+            container.className = 'chart-container';
+            const canvas = document.createElement('canvas');
+            container.appendChild(canvas);
+            
+            card.appendChild(title);
+            card.appendChild(container);
+                
+                const ctx = canvas.getContext('2d');
+            const chart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    datasets: [
+                        {
+                            label: 'Magnitude',
+                            data: [], // {x: Date, y: number}
+                            borderColor: '#667eea',
+                            backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                            tension: 0.3,
+                            fill: true,
+                            pointRadius: 0
+                        },
+                        {
+                            label: 'Baseline',
+                            data: [],
+                            borderColor: '#48bb78',
+                            backgroundColor: 'transparent',
+                            borderDash: [5, 5],
+                            pointRadius: 0
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    animation: {
+                        duration: 750
+                    },
+                    scales: {
+                        x: {
+                            type: 'time',
+                            time: { 
+                                tooltipFormat: 'dd/MM/yyyy HH:mm:ss',
+                                displayFormats: {
+                                    second: 'HH:mm:ss',
+                                    minute: 'HH:mm',
+                                    hour: 'HH:mm'
+                                }
+                            },
+                            title: { display: true, text: 'Thời gian' }
+                        },
+                        y: {
+                            title: { display: true, text: 'Độ rung (g)' }
+                        }
+                    },
+                    plugins: {
+                        legend: { display: true, position: 'top' },
+                        tooltip: { 
+                            mode: 'index', 
+                            intersect: false,
+                            callbacks: {
+                                title: function(context) {
+                                    const date = context[0].raw.x;
+                                    return new Date(date).toLocaleString('vi-VN');
+                                }
+                            }
+                        }
+                    },
+                    interaction: { mode: 'nearest', axis: 'x', intersect: false }
+                }
+            });
+
+            return { card, chart };
+        }
+
+        // Load devices and render all charts (excluding simulated)
+        async function loadDevicesAndRenderAll() {
+            console.log('🔄 Loading devices...');
+            try {
+                const response = await fetch('/api/devices?include_simulated=0');
+                console.log('📡 API Response status:', response.status);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const devices = await response.json();
+                console.log('📱 Devices received:', devices);
+                
+                const container = document.getElementById('allCharts');
+                container.innerHTML = '';
+                
+                if (devices.length === 0) {
+                    container.innerHTML = '<div class="no-data">Không có thiết bị hoạt động</div>';
+                    return;
+                }
+                
+                for (const device of devices) {
+                    const { card, chart } = createDeviceChartCard(device);
+                    container.appendChild(card);
+                    deviceCharts.set(device.device_id, { chart, device });
+                    // Load historical data for each device
+                    loadHistoricalForDevice(device.device_id);
+                }
+
+            } catch (error) {
+                console.error('❌ Error loading devices:', error);
+                const container = document.getElementById('allCharts');
+                container.innerHTML = '<div class="no-data">Lỗi tải danh sách thiết bị</div>';
+            }
+        }
+
+        // Load historical data for one device
+        async function loadHistoricalForDevice(deviceId) {
+            try {
+                console.log(`📊 Loading historical data for: ${deviceId} (${currentRangeHours}h)`);
+                const limit = computeLimitByHours(currentRangeHours);
+                const url = `/api/sensor-data/${deviceId}?hours=${currentRangeHours}&limit=${limit}`;
+                const response = await fetch(url);
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                const result = await response.json();
+                console.log(`📊 Received data for ${deviceId}:`, result.data.length, 'points');
+                
+                const chartInfo = deviceCharts.get(deviceId);
+                if (!chartInfo) {
+                    console.error('❌ No chart found for device:', deviceId);
+                    return;
+                }
+                applyHistoricalToChart(chartInfo, result.data || []);
+            } catch (e) {
+                console.error('❌ Load historical failed for', deviceId, e);
+            }
+        }
+
+        function computeLimitByHours(hours) {
+            // Gợi ý: lấy 120 điểm/giờ (mỗi 30s một điểm), tối đa 30000 điểm
+            const points = Math.min(30000, Math.max(500, Math.floor(hours * 120)));
+            return points;
+        }
+
+        // Apply historical data to a device chart (with time x-axis)
+        function applyHistoricalToChart(chartInfo, data) {
+            console.log('📈 Applying', data.length, 'data points to chart');
+            if (data.length === 0) {
+                console.log('⚠️ No historical data to display');
+                return;
+            }
+            // Lọc lại data chỉ lấy đúng trong range X giờ đã chọn
+            const now = Date.now();
+            const rangeMs = currentRangeHours * 3600 * 1000;
+            const minTime = now - rangeMs;
+            const filtered = data.filter(d => {
+                const t = new Date(d.timestamp).getTime();
+                return t >= minTime && t <= now;
+            });
+            // Map sang chartjs
+            const points = filtered.map(d => ({ x: new Date(d.timestamp), y: d.vibration_magnitude }));
+            const approxBaseline = filtered.map(d => ({ x: new Date(d.timestamp), y: d.vibration_magnitude * 0.8 }));
+            chartInfo.chart.data.datasets[0].data = points;
+            chartInfo.chart.data.datasets[1].data = approxBaseline;
+            updateChartTimeRange(chartInfo.chart);
+            chartInfo.chart.update();
+            console.log('✅ Chart data applied successfully (filtered to', points.length, 'points)');
+        }
+
+        // Update chart time range configuration
+        function updateChartTimeRange(chart) {
+            const now = Date.now();
+            const startTime = now - currentRangeHours * 3600 * 1000;
+
+            const xScale = chart.options.scales.x;
+            // Use primitive timestamps to avoid Date proxy issues
+            xScale.min = startTime;
+            xScale.max = now;
+
+            // Only mutate existing objects; avoid reassigning nested option objects
+            const timeOpts = xScale.time || (xScale.time = {});
+            let desiredUnit;
+            if (currentRangeHours <= 6) {
+                desiredUnit = 'minute';
+            } else if (currentRangeHours <= 24) {
+                desiredUnit = 'hour';
+            } else if (currentRangeHours <= 168) {
+                desiredUnit = 'day';
+            } else if (currentRangeHours <= 720) {
+                desiredUnit = 'day';
+            } else {
+                desiredUnit = 'month';
+            }
+            if (timeOpts.unit !== desiredUnit) timeOpts.unit = desiredUnit;
+
+            // Update display formats without replacing the object reference
+            if (!timeOpts.displayFormats) timeOpts.displayFormats = {};
+            const df = timeOpts.displayFormats;
+            if (currentRangeHours <= 6) {
+                df.second = 'HH:mm:ss';
+                df.minute = 'HH:mm';
+                df.hour = 'HH:mm';
+                delete df.day; delete df.week; delete df.month;
+            } else if (currentRangeHours <= 24) {
+                delete df.second;
+                df.minute = 'HH:mm';
+                df.hour = 'HH:mm';
+                delete df.day; delete df.week; delete df.month;
+            } else if (currentRangeHours <= 168) {
+                delete df.second; delete df.minute;
+                df.hour = 'HH:mm';
+                df.day = 'dd/MM';
+                delete df.week; delete df.month;
+            } else if (currentRangeHours <= 720) {
+                delete df.second; delete df.minute; delete df.hour;
+                df.day = 'dd/MM';
+                df.week = 'dd/MM';
+                delete df.month;
+            } else {
+                delete df.second; delete df.minute; delete df.hour; delete df.week;
+                df.day = 'dd/MM';
+                df.month = 'MM/yyyy';
+            }
+        }
+
+        // Append realtime point to device chart
+        function appendRealtimePoint(chartInfo, data) {
+            console.log('📊 Appending point:', data.vibration_magnitude);
+            const p = { x: new Date(data.timestamp), y: data.vibration_magnitude };
+            const baselinePoint = { x: new Date(data.timestamp), y: data.baseline };
+            chartInfo.chart.data.datasets[0].data.push(p);
+            chartInfo.chart.data.datasets[1].data.push(baselinePoint);
+            // Trim theo thời gian: chỉ giữ điểm thuộc phạm vi đã chọn
+            const now = Date.now();
+            const minTime = now - currentRangeHours * 3600 * 1000;
+            chartInfo.chart.data.datasets.forEach(ds => {
+                while (ds.data.length > 0 && new Date(ds.data[0].x).getTime() < minTime) {
+                    ds.data.shift();
+                }
+            });
+            // Update chart
+            updateChartTimeRange(chartInfo.chart);
+            chartInfo.chart.update();
+            console.log('✅ Chart updated. Current data points:', chartInfo.chart.data.datasets[0].data.length);
+        }
+
+        // Update chart with new data point
+        function updateChart(data) {
+            console.log('📊 Adding new data point:', data.vibration_magnitude);
+            
+            // Use simple index for x-axis
+            const newIndex = chartData.labels.length;
+            chartData.labels.push(newIndex);
+            chartData.datasets[0].data.push(data.vibration_magnitude);
+            chartData.datasets[1].data.push(data.baseline);
+
+            // Keep only last 100 data points
+            if (chartData.labels.length > 100) {
+                chartData.labels.shift();
+                chartData.datasets[0].data.shift();
+                chartData.datasets[1].data.shift();
+            }
+
+            if (vibrationChart) {
+                vibrationChart.update('none');
+                console.log('✅ Chart updated with new data');
+            } else {
+                console.error('❌ Chart not initialized');
+            }
+        }
+
+        // Load alerts
+        async function loadAlerts() {
+            try {
+                // hạn chế tối đa 168 giờ cho mục cảnh báo để danh sách dễ đọc
+                const alertHours = Math.min(currentRangeHours, 168);
+                const response = await fetch(`/api/alerts?hours=${alertHours}`);
+                const alerts = await response.json();
+                displayAlerts(alerts);
+            } catch (error) {
+                console.error('Error loading alerts:', error);
+            }
+        }
+
+        // Display alerts
+        function displayAlerts(alerts) {
+            const alertsList = document.getElementById('alertsList');
+            
+            if (alerts.length === 0) {
+                alertsList.innerHTML = '<div class="no-data">Không có cảnh báo nào trong 24 giờ qua</div>';
+                return;
+            }
+
+            alertsList.innerHTML = alerts.map(alert => `
+                <div class="alert-item alert-${alert.severity.toLowerCase()}">
+                    <strong>${alert.device_name || alert.device_id}</strong> - ${alert.severity}
+                    <br>
+                    <small>${alert.message}</small>
+                    <br>
+                    <small>${new Date(alert.timestamp).toLocaleString('vi-VN')}</small>
+                </div>
+            `).join('');
+        }
+
+        // Auto-refresh alerts every 30 seconds
+        setInterval(loadAlerts, 30000);
+    </script>
+</body>
+</html>

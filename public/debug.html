@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Debug - Vibration Monitor</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .debug-section { margin: 20px 0; padding: 15px; border: 1px solid #ccc; }
+        .success { color: green; }
+        .error { color: red; }
+        .info { color: blue; }
+        button { padding: 10px 20px; margin: 5px; }
+        #log { background: #f5f5f5; padding: 10px; height: 300px; overflow-y: auto; }
+    </style>
+</head>
+<body>
+    <h1>🔧 Debug - Vibration Monitor System</h1>
+    
+    <div class="debug-section">
+        <h3>📡 API Tests</h3>
+        <button onclick="testDevicesAPI()">Test Devices API</button>
+        <button onclick="testSensorDataAPI()">Test Sensor Data API</button>
+        <button onclick="testAlertsAPI()">Test Alerts API</button>
+        <button onclick="sendTestData()">Send Test Data</button>
+    </div>
+
+    <div class="debug-section">
+        <h3>🔌 Socket.IO Tests</h3>
+        <button onclick="testSocketConnection()">Test Socket Connection</button>
+        <button onclick="testSocketEvents()">Test Socket Events</button>
+    </div>
+
+    <div class="debug-section">
+        <h3>📊 Device Selector Test</h3>
+        <select id="testDeviceSelect">
+            <option value="">Loading...</option>
+        </select>
+        <button onclick="testDeviceSelection()">Test Selection</button>
+    </div>
+
+    <div class="debug-section">
+        <h3>📝 Debug Log</h3>
+        <div id="log"></div>
+        <button onclick="clearLog()">Clear Log</button>
+    </div>
+
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <script>
+        let socket;
+        let logElement = document.getElementById('log');
+
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = document.createElement('div');
+            logEntry.className = type;
+            logEntry.textContent = `[${timestamp}] ${message}`;
+            logElement.appendChild(logEntry);
+            logElement.scrollTop = logElement.scrollHeight;
+            console.log(message);
+        }
+
+        function clearLog() {
+            logElement.innerHTML = '';
+        }
+
+        // Test Devices API
+        async function testDevicesAPI() {
+            log('🔄 Testing Devices API...', 'info');
+            try {
+                const response = await fetch('/api/devices');
+                log(`📡 Response status: ${response.status}`, 'info');
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const devices = await response.json();
+                log(`✅ Found ${devices.length} devices:`, 'success');
+                devices.forEach(device => {
+                    log(`  - ${device.device_id}: ${device.device_name}`, 'info');
+                });
+                
+                // Update test selector
+                updateTestSelector(devices);
+                
+            } catch (error) {
+                log(`❌ Error: ${error.message}`, 'error');
+            }
+        }
+
+        // Update test device selector
+        function updateTestSelector(devices) {
+            const select = document.getElementById('testDeviceSelect');
+            select.innerHTML = '<option value="">Chọn thiết bị...</option>';
+            
+            devices.forEach(device => {
+                const option = document.createElement('option');
+                option.value = device.device_id;
+                option.textContent = `${device.device_name || device.device_id}`;
+                select.appendChild(option);
+            });
+        }
+
+        // Test Sensor Data API
+        async function testSensorDataAPI() {
+            const deviceId = document.getElementById('testDeviceSelect').value;
+            if (!deviceId) {
+                log('⚠️ Please select a device first', 'error');
+                return;
+            }
+
+            log(`🔄 Testing Sensor Data API for device: ${deviceId}`, 'info');
+            try {
+                const response = await fetch(`/api/sensor-data/${deviceId}?hours=24&limit=10`);
+                log(`📡 Response status: ${response.status}`, 'info');
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const result = await response.json();
+                log(`✅ Received data:`, 'success');
+                log(`  - Device: ${result.device_id}`, 'info');
+                log(`  - Data points: ${result.data ? result.data.length : 0}`, 'info');
+                
+                if (result.data && result.data.length > 0) {
+                    const latest = result.data[result.data.length - 1];
+                    log(`  - Latest: ${latest.vibration_magnitude.toFixed(3)} at ${latest.timestamp}`, 'info');
+                }
+                
+            } catch (error) {
+                log(`❌ Error: ${error.message}`, 'error');
+            }
+        }
+
+        // Test Alerts API
+        async function testAlertsAPI() {
+            log('🔄 Testing Alerts API...', 'info');
+            try {
+                const response = await fetch('/api/alerts?hours=24');
+                log(`📡 Response status: ${response.status}`, 'info');
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const alerts = await response.json();
+                log(`✅ Found ${alerts.length} alerts:`, 'success');
+                alerts.forEach(alert => {
+                    log(`  - ${alert.device_id}: ${alert.severity} - ${alert.message}`, 'info');
+                });
+                
+            } catch (error) {
+                log(`❌ Error: ${error.message}`, 'error');
+            }
+        }
+
+        // Send test data
+        async function sendTestData() {
+            log('🔄 Sending test data...', 'info');
+            try {
+                const testData = {
+                    device_id: "DEBUG_TEST_001",
+                    accel_x: Math.random() * 2 - 1,
+                    accel_y: Math.random() * 2 - 1,
+                    accel_z: 9.8 + Math.random() * 0.5 - 0.25,
+                    timestamp: new Date().toISOString()
+                };
+
+                const response = await fetch('/api/sensor-data', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(testData)
+                });
+
+                log(`📡 Response status: ${response.status}`, 'info');
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const result = await response.json();
+                log(`✅ Data sent successfully:`, 'success');
+                log(`  - Magnitude: ${result.vibration_magnitude.toFixed(3)}`, 'info');
+                log(`  - Abnormal: ${result.is_abnormal ? 'YES' : 'NO'}`, 'info');
+                log(`  - Severity: ${result.severity}`, 'info');
+                
+            } catch (error) {
+                log(`❌ Error: ${error.message}`, 'error');
+            }
+        }
+
+        // Test Socket Connection
+        function testSocketConnection() {
+            log('🔄 Testing Socket.IO connection...', 'info');
+            
+            if (socket) {
+                socket.disconnect();
+            }
+            
+            socket = io();
+            
+            socket.on('connect', function() {
+                log('✅ Socket connected successfully', 'success');
+            });
+
+            socket.on('connect_error', function(error) {
+                log(`❌ Socket connection error: ${error}`, 'error');
+            });
+
+            socket.on('disconnect', function() {
+                log('⚠️ Socket disconnected', 'info');
+            });
+
+            socket.on('sensor_data', function(data) {
+                log(`📡 Received sensor data: ${data.device_id} - ${data.vibration_magnitude.toFixed(3)}`, 'info');
+            });
+        }
+
+        // Test Socket Events
+        function testSocketEvents() {
+            if (!socket || !socket.connected) {
+                log('❌ Socket not connected. Please test connection first.', 'error');
+                return;
+            }
+
+            log('🔄 Testing socket events...', 'info');
+            socket.emit('subscribe_device', 'DEBUG_TEST_001');
+            log('📡 Subscribed to device: DEBUG_TEST_001', 'info');
+        }
+
+        // Test Device Selection
+        function testDeviceSelection() {
+            const select = document.getElementById('testDeviceSelect');
+            const selectedValue = select.value;
+            log(`🎯 Device selected: ${selectedValue}`, 'info');
+            
+            if (selectedValue) {
+                log('✅ Device selection working correctly', 'success');
+            } else {
+                log('⚠️ No device selected', 'error');
+            }
+        }
+
+        // Auto-run tests on page load
+        window.addEventListener('load', function() {
+            log('🚀 Debug page loaded', 'info');
+            testDevicesAPI();
+        });
+    </script>
+</body>
+</html>
+
+
+
