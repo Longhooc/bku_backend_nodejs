@@ -275,28 +275,39 @@ app.post('/api/sensor-data', handleSensorDataPost);
 // Get historical data for charts
 app.get('/api/sensor-data/:device_id', (req, res) => {
     const { device_id } = req.params;
-    const { hours = 24, limit = 1000 } = req.query;
-
-    const query = `
-        SELECT timestamp, accel_x, accel_y, accel_z, vibration_magnitude, is_abnormal
-        FROM sensor_data 
-        WHERE device_id = ? 
-        AND timestamp >= datetime('now', '-${hours} hours')
-        ORDER BY timestamp DESC 
-        LIMIT ?
-    `;
-
-    db.all(query, [device_id, parseInt(limit)], (err, rows) => {
-        if (err) {
-            console.error('Database error:', err);
-            return res.status(500).json({ error: 'Database error' });
+    const { hours = 24, limit = 100000 } = req.query;
+    // 1. Tìm timestamp mới nhất của device
+    db.get(
+        'SELECT MAX(timestamp) as maxTime FROM sensor_data WHERE device_id = ?',
+        [device_id],
+        (err, row) => {
+            if (err) {
+                console.error('Database error:', err);
+                return res.status(500).json({ error: 'Database error' });
+            }
+            if (!row || !row.maxTime) {
+                return res.json({ device_id, data: [] });
+            }
+            const maxTime = row.maxTime;
+            // 2. Lấy dữ liệu từ (maxTime - hours giờ) đến maxTime
+            const rangeQuery = `
+                SELECT timestamp, accel_x, accel_y, accel_z, vibration_magnitude, is_abnormal
+                FROM sensor_data
+                WHERE device_id = ?
+                  AND timestamp >= datetime(?, '-${hours} hours') 
+                  AND timestamp <= ?
+                ORDER BY timestamp ASC
+                LIMIT ?
+            `;
+            db.all(rangeQuery, [device_id, maxTime, maxTime, parseInt(limit)], (err2, rows) => {
+                if (err2) {
+                    console.error('Database error:', err2);
+                    return res.status(500).json({ error: 'Database error' });
+                }
+                res.json({ device_id, data: rows });
+            });
         }
-
-        res.json({
-            device_id,
-            data: rows.reverse() // Return in chronological order
-        });
-    });
+    );
 });
 
 // Get all devices

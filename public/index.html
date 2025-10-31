@@ -562,8 +562,8 @@
         }
 
         function computeLimitByHours(hours) {
-            // Gợi ý: lấy 120 điểm/giờ (mỗi 30s một điểm), tối đa 30000 điểm
-            const points = Math.min(30000, Math.max(500, Math.floor(hours * 120)));
+            // Tăng limit: lấy 1000 điểm/giờ, tối đa 100000, tối thiểu 2000
+            const points = Math.min(100000, Math.max(2000, Math.floor(hours * 1000)));
             return points;
         }
 
