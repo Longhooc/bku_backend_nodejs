@@ -239,10 +239,16 @@
         // Global variables
         let socket;
         const deviceCharts = new Map(); // device_id -> { chart, device }
+        const deviceLastTimestamp = new Map(); // device_id -> last data time (ms)
         let currentRangeHours = 24;
         let rangeChangeTimer = null;
         let autoRefreshInterval = null;
         let autoRefreshEnabled = true;
+        // Store canonical series per device to simplify incremental updates
+        // Structure: Map<deviceId, Array<{ t: number /*ms*/, magnitude: number, baseline: number }>>
+        const deviceDataStore = new Map();
+        // Track socket connection status to gate polling
+        let socketConnected = false;
 
         // Initialize application
         document.addEventListener('DOMContentLoaded', function() {
@@ -278,6 +284,7 @@
             
             socket.on('connect', function() {
                 console.log('✅ Connected to server');
+                socketConnected = true;
             });
 
             socket.on('sensor_data', function(data) {
@@ -293,6 +300,7 @@
 
             socket.on('disconnect', function() {
                 console.log('❌ Disconnected from server');
+                socketConnected = false;
             });
 
             socket.on('connect_error', function(error) {
@@ -381,7 +389,10 @@
             autoRefreshInterval = setInterval(() => {
                 if (autoRefreshEnabled) {
                     console.log('🔄 Auto-refreshing data...');
-                    reloadAllHistorical();
+                    // If socket is connected, skip polling sensor data to avoid redundancy
+                    if (!socketConnected) {
+                        refreshIncrementalAll();
+                    }
                     loadAlerts();
                 }
             }, 30000);
@@ -555,7 +566,20 @@
                     console.error('❌ No chart found for device:', deviceId);
                     return;
                 }
-                applyHistoricalToChart(chartInfo, result.data || []);
+                // Build canonical store for this device
+                const raw = result.data || [];
+                const series = raw.map(d => ({
+                    t: new Date(d.timestamp).getTime(),
+                    magnitude: d.vibration_magnitude,
+                    baseline: d.vibration_magnitude * 0.8
+                }));
+                deviceDataStore.set(deviceId, series);
+                // Render from store constrained to current window
+                renderChartFromStore(deviceId, chartInfo);
+                // Track last timestamp for incremental
+                if (series.length > 0) {
+                    deviceLastTimestamp.set(deviceId, series[series.length - 1].t);
+                }
             } catch (e) {
                 console.error('❌ Load historical failed for', deviceId, e);
             }
@@ -567,34 +591,54 @@
             return points;
         }
 
+        // Helper: lấy timestamp mới nhất từ dataset chính
+        function getChartLatestTimestamp(chart) {
+            const ds = chart?.data?.datasets?.[0]?.data || [];
+            if (ds.length === 0) return null;
+            const last = ds[ds.length - 1];
+            const t = new Date(last.x).getTime();
+            return Number.isFinite(t) ? t : null;
+        }
+
         // Apply historical data to a device chart (with time x-axis)
         function applyHistoricalToChart(chartInfo, data) {
             console.log('📈 Applying', data.length, 'data points to chart');
-            if (data.length === 0) {
-                console.log('⚠️ No historical data to display');
+            const deviceId = chartInfo.device?.device_id || [...deviceCharts.entries()].find(([, v]) => v.chart === chartInfo.chart)?.[0];
+            // Backward compatibility: store then render
+            const series = (data || []).map(d => ({
+                t: new Date(d.timestamp).getTime(),
+                magnitude: d.vibration_magnitude,
+                baseline: d.vibration_magnitude * 0.8
+            }));
+            deviceDataStore.set(deviceId, series);
+            renderChartFromStore(deviceId, chartInfo);
+        }
+
+        // Render helper from canonical store, trimming outside current range
+        function renderChartFromStore(deviceId, chartInfo) {
+            const series = deviceDataStore.get(deviceId) || [];
+            if (series.length === 0) {
+                chartInfo.chart.data.datasets[0].data = [];
+                chartInfo.chart.data.datasets[1].data = [];
+                chartInfo.chart.update();
                 return;
             }
-            // Lọc lại data chỉ lấy đúng trong range X giờ đã chọn
-            const now = Date.now();
+            const end = series[series.length - 1].t || Date.now();
             const rangeMs = currentRangeHours * 3600 * 1000;
-            const minTime = now - rangeMs;
-            const filtered = data.filter(d => {
-                const t = new Date(d.timestamp).getTime();
-                return t >= minTime && t <= now;
-            });
-            // Map sang chartjs
-            const points = filtered.map(d => ({ x: new Date(d.timestamp), y: d.vibration_magnitude }));
-            const approxBaseline = filtered.map(d => ({ x: new Date(d.timestamp), y: d.vibration_magnitude * 0.8 }));
-            chartInfo.chart.data.datasets[0].data = points;
-            chartInfo.chart.data.datasets[1].data = approxBaseline;
+            const start = end - rangeMs;
+            const windowed = series.filter(p => p.t >= start && p.t <= end);
+            chartInfo.chart.data.datasets[0].data = windowed.map(p => ({ x: new Date(p.t), y: p.magnitude }));
+            chartInfo.chart.data.datasets[1].data = windowed.map(p => ({ x: new Date(p.t), y: p.baseline }));
             updateChartTimeRange(chartInfo.chart);
             chartInfo.chart.update();
-            console.log('✅ Chart data applied successfully (filtered to', points.length, 'points)');
+            if (windowed.length > 0) deviceLastTimestamp.set(deviceId, windowed[windowed.length - 1].t);
         }
 
         // Update chart time range configuration
         function updateChartTimeRange(chart) {
-            const now = Date.now();
+            // Ưu tiên dùng timestamp mới nhất có trong chart để cố định cửa sổ
+            const latestTs = getChartLatestTimestamp(chart);
+            const now = latestTs ?? Date.now();
             const startTime = now - currentRangeHours * 3600 * 1000;
 
             const xScale = chart.options.scales.x;
@@ -651,22 +695,24 @@
         // Append realtime point to device chart
         function appendRealtimePoint(chartInfo, data) {
             console.log('📊 Appending point:', data.vibration_magnitude);
-            const p = { x: new Date(data.timestamp), y: data.vibration_magnitude };
-            const baselinePoint = { x: new Date(data.timestamp), y: data.baseline };
-            chartInfo.chart.data.datasets[0].data.push(p);
-            chartInfo.chart.data.datasets[1].data.push(baselinePoint);
-            // Trim theo thời gian: chỉ giữ điểm thuộc phạm vi đã chọn
-            const now = Date.now();
-            const minTime = now - currentRangeHours * 3600 * 1000;
-            chartInfo.chart.data.datasets.forEach(ds => {
-                while (ds.data.length > 0 && new Date(ds.data[0].x).getTime() < minTime) {
-                    ds.data.shift();
-                }
-            });
-            // Update chart
-            updateChartTimeRange(chartInfo.chart);
-            chartInfo.chart.update();
-            console.log('✅ Chart updated. Current data points:', chartInfo.chart.data.datasets[0].data.length);
+            const deviceId = chartInfo.device?.device_id || [...deviceCharts.entries()].find(([, v]) => v.chart === chartInfo.chart)?.[0];
+            const ts = new Date(data.timestamp).getTime();
+            const series = deviceDataStore.get(deviceId) || [];
+            // Guard duplicate or out-of-order data
+            const lastTs = series.length ? series[series.length - 1].t : -Infinity;
+            if (!(ts > lastTs)) {
+                // Ignore if timestamp is not strictly newer
+                return;
+            }
+            series.push({ t: ts, magnitude: data.vibration_magnitude, baseline: data.baseline });
+            deviceDataStore.set(deviceId, series);
+            // Trim outside window by time
+            const end = ts;
+            const start = end - currentRangeHours * 3600 * 1000;
+            while (series.length && series[0].t < start) series.shift();
+            // Re-render from store
+            renderChartFromStore(deviceId, chartInfo);
+            console.log('✅ Chart updated. Current data points:', series.length);
         }
 
         // Update chart with new data point
@@ -729,6 +775,49 @@
 
         // Auto-refresh alerts every 30 seconds
         setInterval(loadAlerts, 30000);
+
+        // Incremental refresh: chỉ tải điểm mới kể từ last timestamp mỗi device
+        async function refreshIncrementalAll() {
+            for (const [deviceId, chartInfo] of deviceCharts.entries()) {
+                try {
+                    const stored = deviceDataStore.get(deviceId) || [];
+                    const lastTsMs = stored.length ? stored[stored.length - 1].t : 0;
+                    let url;
+                    if (lastTsMs > 0) {
+                        const lastStr = new Date(lastTsMs).toISOString().replace('T', ' ').substring(0, 19);
+                        // Chỉ lấy điểm mới hơn mốc cuối cùng
+                        const limit = 20000;
+                        url = `/api/sensor-data/${deviceId}?since=${encodeURIComponent(lastStr)}&limit=${limit}`;
+                    } else {
+                        // Fallback: lấy trong vài giờ gần nhất nếu chưa có mốc
+                        const hours = Math.min(currentRangeHours, 6);
+                        const limit = computeLimitByHours(hours);
+                        url = `/api/sensor-data/${deviceId}?hours=${hours}&limit=${limit}`;
+                    }
+                    const response = await fetch(url);
+                    if (!response.ok) continue;
+                    const result = await response.json();
+                    const incoming = result.data || [];
+                    if (incoming.length === 0) continue;
+                    // Append to store first
+                    incoming.forEach(d => {
+                        const t = new Date(d.timestamp).getTime();
+                        if (t > lastTsMs) {
+                            stored.push({ t, magnitude: d.vibration_magnitude, baseline: d.vibration_magnitude * 0.8 });
+                        }
+                    });
+                    // Trim store to current window relative to latest t
+                    const end = stored.length ? stored[stored.length - 1].t : Date.now();
+                    const start = end - currentRangeHours * 3600 * 1000;
+                    while (stored.length && stored[0].t < start) stored.shift();
+                    deviceDataStore.set(deviceId, stored);
+                    // Re-render from store
+                    renderChartFromStore(deviceId, chartInfo);
+                } catch (err) {
+                    console.error('Incremental refresh failed for', deviceId, err);
+                }
+            }
+        }
     </script>
 </body>
 </html>

@@ -275,7 +275,7 @@ app.post('/api/sensor-data', handleSensorDataPost);
 // Get historical data for charts
 app.get('/api/sensor-data/:device_id', (req, res) => {
     const { device_id } = req.params;
-    const { hours = 24, limit = 100000 } = req.query;
+    const { hours = 24, limit = 100000, since } = req.query;
     // 1. Tìm timestamp mới nhất của device
     db.get(
         'SELECT MAX(timestamp) as maxTime FROM sensor_data WHERE device_id = ?',
@@ -289,17 +289,23 @@ app.get('/api/sensor-data/:device_id', (req, res) => {
                 return res.json({ device_id, data: [] });
             }
             const maxTime = row.maxTime;
-            // 2. Lấy dữ liệu từ (maxTime - hours giờ) đến maxTime
+            // 2. Xác định mốc dưới (lowerBound): ưu tiên tham số since nếu có
+            // since kỳ vọng định dạng 'YYYY-MM-DD HH:MM:SS'
+            const hasSince = Boolean(since && typeof since === 'string' && since.trim().length >= 19);
+            const lowerExpr = hasSince ? '?' : `datetime(?, '-${hours} hours')`;
             const rangeQuery = `
                 SELECT timestamp, accel_x, accel_y, accel_z, vibration_magnitude, is_abnormal
                 FROM sensor_data
                 WHERE device_id = ?
-                  AND timestamp >= datetime(?, '-${hours} hours') 
+                  AND timestamp > ${lowerExpr}
                   AND timestamp <= ?
                 ORDER BY timestamp ASC
                 LIMIT ?
             `;
-            db.all(rangeQuery, [device_id, maxTime, maxTime, parseInt(limit)], (err2, rows) => {
+            const params = hasSince
+                ? [device_id, since.trim(), maxTime, parseInt(limit)]
+                : [device_id, maxTime, maxTime, parseInt(limit)];
+            db.all(rangeQuery, params, (err2, rows) => {
                 if (err2) {
                     console.error('Database error:', err2);
                     return res.status(500).json({ error: 'Database error' });
