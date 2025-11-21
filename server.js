@@ -163,6 +163,9 @@ class VibrationAnalyzer {
 
 const analyzer = new VibrationAnalyzer();
 
+// In-memory cache for last battery voltage per device (no database persistence)
+const lastBatteryByDevice = new Map(); // device_id -> { voltage: number, updatedAt: string }
+
 // API Routes
 
 // Reusable handler for sensor data endpoint
@@ -170,7 +173,7 @@ function handleSensorDataPost(req, res) {
     console.log('📡 Received POST /api/sensor-data');
     console.log('📦 Request body:', JSON.stringify(req.body, null, 2));
     
-    const { device_id, accel_x, accel_y, accel_z, timestamp } = req.body;
+    const { device_id, accel_x, accel_y, accel_z, timestamp, battery_voltage_mv } = req.body;
 
     if (!device_id || accel_x === undefined || accel_y === undefined || accel_z === undefined) {
         console.error('❌ Missing required fields:', { device_id, accel_x, accel_y, accel_z });
@@ -238,8 +241,18 @@ function handleSensorDataPost(req, res) {
             );
         }
 
+        // Update last battery cache (only in memory) if provided
+        if (battery_voltage_mv !== undefined) {
+            // Use server timestamp ISO for consistency
+            const updatedAtIso = new Date().toISOString();
+            lastBatteryByDevice.set(device_id, {
+                voltage: battery_voltage_mv,
+                updatedAt: updatedAtIso
+            });
+        }
+
         // Emit real-time data to connected clients
-        io.emit('sensor_data', {
+        const emitData = {
             device_id,
             timestamp: clientTimestamp || new Date().toISOString(),
             accel_x,
@@ -249,7 +262,14 @@ function handleSensorDataPost(req, res) {
             is_abnormal: analysis.isAbnormal,
             severity: analysis.severity,
             baseline: analysis.baseline
-        });
+        };
+        
+        // Add battery_voltage_mv if present (only for display, not stored in DB)
+        if (battery_voltage_mv !== undefined) {
+            emitData.battery_voltage_mv = battery_voltage_mv;
+        }
+        
+        io.emit('sensor_data', emitData);
         
         console.log('📊 Data stored and emitted:', {
             device_id,
@@ -318,6 +338,10 @@ app.get('/api/sensor-data/:device_id', (req, res) => {
 
 // Get all devices
 app.get('/api/devices', (req, res) => {
+    // Disable caching to ensure fresh meta like last_battery_voltage_mv
+    res.set('Cache-Control', 'no-store');
+    res.set('Pragma', 'no-cache');
+    res.set('Expires', '0');
     const { include_simulated = '0' } = req.query;
     const query = `
         SELECT d.*, 
@@ -347,7 +371,20 @@ app.get('/api/devices', (req, res) => {
             filtered = rows.filter(d => !isSimulated(d));
         }
 
-        res.json(filtered);
+        // Enrich with last battery voltage from in-memory cache (no DB storage)
+        const enriched = filtered.map(d => {
+            const cached = lastBatteryByDevice.get(d.device_id);
+            if (cached) {
+                return {
+                    ...d,
+                    last_battery_voltage_mv: cached.voltage,
+                    last_battery_updated_at: cached.updatedAt
+                };
+            }
+            return d;
+        });
+
+        res.json(enriched);
     });
 });
 

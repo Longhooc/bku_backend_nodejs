@@ -296,6 +296,11 @@
                 }
                 console.log('✅ Adding data to chart for device:', data.device_id);
                 appendRealtimePoint(chartInfo, data);
+                
+                // Update battery voltage display if present
+                if (data.battery_voltage_mv !== undefined) {
+                    updateBatteryVoltage(data.device_id, data.battery_voltage_mv);
+                }
             });
 
             socket.on('disconnect', function() {
@@ -438,13 +443,35 @@
             const title = document.createElement('h4');
             title.textContent = `${device.device_name || device.device_id} — ${device.location || 'Unknown'}`;
             
+            // Battery voltage display
+            const batteryContainer = document.createElement('div');
+            batteryContainer.style.cssText = 'display: flex; align-items: center; gap: 10px; margin-bottom: 15px; padding: 10px; background: #f7fafc; border-radius: 8px;';
+            const batteryLabel = document.createElement('span');
+            batteryLabel.textContent = '🔋 Điện áp pin:';
+            batteryLabel.style.cssText = 'font-weight: 600; color: #4a5568;';
+            const batteryValue = document.createElement('span');
+            batteryValue.id = `battery_${device.device_id}`;
+            batteryValue.textContent = '-- mV';
+            batteryValue.style.cssText = 'font-size: 1.1rem; font-weight: bold; color: #667eea;';
+            batteryContainer.appendChild(batteryLabel);
+            batteryContainer.appendChild(batteryValue);
+            
             const container = document.createElement('div');
             container.className = 'chart-container';
             const canvas = document.createElement('canvas');
             container.appendChild(canvas);
             
             card.appendChild(title);
+            card.appendChild(batteryContainer);
             card.appendChild(container);
+
+            // Initialize battery value from device meta if available (write directly to created element)
+            if (device.last_battery_voltage_mv !== undefined && device.last_battery_voltage_mv !== null) {
+                const mv = Number(device.last_battery_voltage_mv);
+                if (Number.isFinite(mv)) {
+                    setBatteryDisplay(batteryValue, mv);
+                }
+            }
                 
                 const ctx = canvas.getContext('2d');
             const chart = new Chart(ctx, {
@@ -490,7 +517,7 @@
                             title: { display: true, text: 'Thời gian' }
                         },
                         y: {
-                            title: { display: true, text: 'Độ rung (g)' }
+                            title: { display: true, text: 'Độ rung (m/s²)' }
                         }
                     },
                     plugins: {
@@ -517,7 +544,7 @@
         async function loadDevicesAndRenderAll() {
             console.log('🔄 Loading devices...');
             try {
-                const response = await fetch('/api/devices?include_simulated=0');
+                const response = await fetch('/api/devices?include_simulated=0&_ts=' + Date.now(), { cache: 'no-store' });
                 console.log('📡 API Response status:', response.status);
                 
                 if (!response.ok) {
@@ -689,6 +716,27 @@
                 delete df.second; delete df.minute; delete df.hour; delete df.week;
                 df.day = 'dd/MM';
                 df.month = 'MM/yyyy';
+            }
+        }
+
+        // Shared battery display helper
+        function setBatteryDisplay(el, voltageMv) {
+            const voltageV = (voltageMv / 1000).toFixed(2);
+            el.textContent = `${voltageMv} mV (${voltageV} V)`;
+            if (voltageMv < 3000) {
+                el.style.color = '#f56565';
+            } else if (voltageMv < 3200) {
+                el.style.color = '#ed8936';
+            } else {
+                el.style.color = '#48bb78';
+            }
+        }
+
+        // Update battery voltage display by deviceId (for websocket path)
+        function updateBatteryVoltage(deviceId, voltageMv) {
+            const batteryElement = document.getElementById(`battery_${deviceId}`);
+            if (batteryElement) {
+                setBatteryDisplay(batteryElement, voltageMv);
             }
         }
 
