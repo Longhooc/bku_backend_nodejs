@@ -83,7 +83,7 @@ class VibrationAnalyzer {
     // Detect abnormal vibration patterns
     detectAbnormalVibration(deviceId, vibrationMagnitude, accelData) {
         const currentTime = moment();
-        
+
         // Initialize device data if not exists
         if (!this.baselineData.has(deviceId)) {
             this.baselineData.set(deviceId, {
@@ -123,8 +123,8 @@ class VibrationAnalyzer {
         const isAbnormal = vibrationMagnitude > threshold;
 
         // Check for sudden spikes
-        const isSpike = recentData.length >= 3 && 
-                       vibrationMagnitude > deviceBaseline.baseline * 2.0;
+        const isSpike = recentData.length >= 3 &&
+            vibrationMagnitude > deviceBaseline.baseline * 2.0;
 
         // Check for frequency analysis (simple pattern detection)
         const isHighFrequency = this.detectHighFrequencyPattern(recentData);
@@ -145,7 +145,7 @@ class VibrationAnalyzer {
         const magnitudes = recentData.slice(-10).map(d => d.magnitude);
         const mean = magnitudes.reduce((sum, val) => sum + val, 0) / magnitudes.length;
         const variance = magnitudes.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / magnitudes.length;
-        
+
         // High variance indicates high frequency changes
         return variance > (mean * 0.3);
     }
@@ -153,7 +153,7 @@ class VibrationAnalyzer {
     // Calculate severity level
     calculateSeverity(currentMagnitude, baseline) {
         const ratio = currentMagnitude / baseline;
-        
+
         if (ratio > 3.0) return 'CRITICAL';
         if (ratio > 2.0) return 'HIGH';
         if (ratio > 1.5) return 'MEDIUM';
@@ -172,14 +172,14 @@ const lastBatteryByDevice = new Map(); // device_id -> { voltage: number, update
 function handleSensorDataPost(req, res) {
     console.log('📡 Received POST /api/sensor-data');
     console.log('📦 Request body:', JSON.stringify(req.body, null, 2));
-    
+
     const { device_id, accel_x, accel_y, accel_z, timestamp, battery_voltage_mv } = req.body;
 
     if (!device_id || accel_x === undefined || accel_y === undefined || accel_z === undefined) {
         console.error('❌ Missing required fields:', { device_id, accel_x, accel_y, accel_z });
         return res.status(400).json({ error: 'Missing required fields' });
     }
-    
+
     console.log('✅ Valid request fields received');
 
     // Auto-register device if not exists
@@ -193,7 +193,7 @@ function handleSensorDataPost(req, res) {
                 INSERT OR REPLACE INTO devices (device_id, device_name, location)
                 VALUES (?, ?, ?)
             `);
-            registerStmt.run(device_id, `Node ${device_id}`, 'Unknown');
+            registerStmt.run(device_id, `Node ${device_id}`, null);
             console.log(`📱 Auto-registered new device: ${device_id}`);
         }
     });
@@ -221,70 +221,70 @@ function handleSensorDataPost(req, res) {
         vibrationMagnitude,
         analysis.isAbnormal ? 1 : 0,
         (err) => {
-        if (err) {
-            console.error('Database error:', err);
-            return res.status(500).json({ error: 'Database error' });
-        }
+            if (err) {
+                console.error('Database error:', err);
+                return res.status(500).json({ error: 'Database error' });
+            }
 
-        // Create alert if abnormal vibration detected
-        if (analysis.isAbnormal) {
-            const alertStmt = db.prepare(`
+            // Create alert if abnormal vibration detected
+            if (analysis.isAbnormal) {
+                const alertStmt = db.prepare(`
                 INSERT INTO vibration_alerts (device_id, alert_type, severity, message)
                 VALUES (?, ?, ?, ?)
             `);
-            
-            alertStmt.run(
+
+                alertStmt.run(
+                    device_id,
+                    'ABNORMAL_VIBRATION',
+                    analysis.severity,
+                    `Abnormal vibration detected: ${vibrationMagnitude.toFixed(2)} (baseline: ${analysis.baseline.toFixed(2)})`
+                );
+            }
+
+            // Update last battery cache (only in memory) if provided
+            if (battery_voltage_mv !== undefined) {
+                // Use server timestamp ISO for consistency
+                const updatedAtIso = new Date().toISOString();
+                lastBatteryByDevice.set(device_id, {
+                    voltage: battery_voltage_mv,
+                    updatedAt: updatedAtIso
+                });
+            }
+
+            // Emit real-time data to connected clients
+            const emitData = {
                 device_id,
-                'ABNORMAL_VIBRATION',
-                analysis.severity,
-                `Abnormal vibration detected: ${vibrationMagnitude.toFixed(2)} (baseline: ${analysis.baseline.toFixed(2)})`
-            );
-        }
+                timestamp: clientTimestamp || new Date().toISOString(),
+                accel_x,
+                accel_y,
+                accel_z,
+                vibration_magnitude: vibrationMagnitude,
+                is_abnormal: analysis.isAbnormal,
+                severity: analysis.severity,
+                baseline: analysis.baseline
+            };
 
-        // Update last battery cache (only in memory) if provided
-        if (battery_voltage_mv !== undefined) {
-            // Use server timestamp ISO for consistency
-            const updatedAtIso = new Date().toISOString();
-            lastBatteryByDevice.set(device_id, {
-                voltage: battery_voltage_mv,
-                updatedAt: updatedAtIso
+            // Add battery_voltage_mv if present (only for display, not stored in DB)
+            if (battery_voltage_mv !== undefined) {
+                emitData.battery_voltage_mv = battery_voltage_mv;
+            }
+
+            io.emit('sensor_data', emitData);
+
+            console.log('📊 Data stored and emitted:', {
+                device_id,
+                vibration_magnitude: vibrationMagnitude.toFixed(3),
+                is_abnormal: analysis.isAbnormal,
+                timestamp: clientTimestamp
             });
-        }
 
-        // Emit real-time data to connected clients
-        const emitData = {
-            device_id,
-            timestamp: clientTimestamp || new Date().toISOString(),
-            accel_x,
-            accel_y,
-            accel_z,
-            vibration_magnitude: vibrationMagnitude,
-            is_abnormal: analysis.isAbnormal,
-            severity: analysis.severity,
-            baseline: analysis.baseline
-        };
-        
-        // Add battery_voltage_mv if present (only for display, not stored in DB)
-        if (battery_voltage_mv !== undefined) {
-            emitData.battery_voltage_mv = battery_voltage_mv;
-        }
-        
-        io.emit('sensor_data', emitData);
-        
-        console.log('📊 Data stored and emitted:', {
-            device_id,
-            vibration_magnitude: vibrationMagnitude.toFixed(3),
-            is_abnormal: analysis.isAbnormal,
-            timestamp: clientTimestamp
+            res.json({
+                success: true,
+                vibration_magnitude: vibrationMagnitude,
+                is_abnormal: analysis.isAbnormal,
+                severity: analysis.severity
+            });
         });
-
-        res.json({
-            success: true,
-            vibration_magnitude: vibrationMagnitude,
-            is_abnormal: analysis.isAbnormal,
-            severity: analysis.severity
-        });
-    });
 
     stmt.finalize();
 }
@@ -366,7 +366,7 @@ app.get('/api/devices', (req, res) => {
                 const id = (d.device_id || '').toLowerCase();
                 const name = (d.device_name || '').toLowerCase();
                 return id.startsWith('debug') || id.startsWith('sim') || id.includes('test') ||
-                       name.includes('debug') || name.includes('sim') || name.includes('test');
+                    name.includes('debug') || name.includes('sim') || name.includes('test');
             };
             filtered = rows.filter(d => !isSimulated(d));
         }
@@ -401,7 +401,7 @@ app.post('/api/devices', (req, res) => {
         VALUES (?, ?, ?)
     `);
 
-    stmt.run(device_id, device_name || `Device ${device_id}`, location || 'Unknown', (err) => {
+    stmt.run(device_id, device_name || `Device ${device_id}`, location || null, (err) => {
         if (err) {
             console.error('Database error:', err);
             return res.status(500).json({ error: 'Database error' });

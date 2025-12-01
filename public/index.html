@@ -1,9 +1,10 @@
 <!DOCTYPE html>
 <html lang="vi">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hệ thống Giám sát Rung động Máy móc</title>
+    <title>Hệ Thống Giám Sát Rung Động Máy Móc</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
@@ -28,15 +29,41 @@
         }
 
         .header {
-            text-align: center;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
             margin-bottom: 30px;
             color: white;
+            padding: 0 20px;
+        }
+
+        .header-left img {
+            height: 80px;
+            width: auto;
+            filter: drop-shadow(0 0 5px rgba(255, 255, 255, 0.5));
+        }
+
+        .header-center {
+            text-align: center;
+            flex-grow: 1;
+        }
+
+        .header-right {
+            text-align: right;
+            font-size: 1rem;
+            font-weight: 500;
+            min-width: 200px;
+        }
+
+        .header-right p {
+            margin-bottom: 5px;
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.3);
         }
 
         .header h1 {
             font-size: 2.5rem;
             margin-bottom: 10px;
-            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
         }
 
         .header p {
@@ -55,7 +82,7 @@
             background: white;
             border-radius: 15px;
             padding: 25px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
             transition: transform 0.3s ease;
         }
 
@@ -101,7 +128,7 @@
             background: white;
             border-radius: 15px;
             padding: 25px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
             margin-bottom: 20px;
         }
 
@@ -125,7 +152,7 @@
             border-radius: 10px;
             padding: 20px;
             text-align: center;
-            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
         }
 
         .status-value {
@@ -139,15 +166,23 @@
             font-size: 0.9rem;
         }
 
-        .normal { color: #48bb78; }
-        .warning { color: #ed8936; }
-        .critical { color: #f56565; }
+        .normal {
+            color: #48bb78;
+        }
+
+        .warning {
+            color: #ed8936;
+        }
+
+        .critical {
+            color: #f56565;
+        }
 
         .alerts-section {
             background: white;
             border-radius: 15px;
             padding: 25px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
         }
 
         .alert-item {
@@ -191,21 +226,41 @@
         }
 
         @media (max-width: 768px) {
+            .header {
+                flex-direction: column;
+                gap: 15px;
+            }
+
+            .header-right {
+                text-align: center;
+            }
+
             .dashboard {
                 grid-template-columns: 1fr;
             }
-            
+
             .header h1 {
                 font-size: 2rem;
             }
         }
     </style>
 </head>
+
 <body>
     <div class="container">
         <div class="header">
-            <h1>🔧 Hệ thống Giám sát Rung động Máy móc</h1>
-            <p>Giám sát thời gian thực và phát hiện độ rung bất thường</p>
+            <div class="header-left">
+                <img src="https://upload.wikimedia.org/wikipedia/commons/d/de/HCMUT_official_logo.png"
+                    alt="BKU HCM Logo">
+            </div>
+            <div class="header-center">
+                <h1>Hệ Thống Giám Sát Rung Động Máy Móc</h1>
+                <p>Giám sát thời gian thực và phát hiện độ rung bất thường</p>
+            </div>
+            <div class="header-right">
+                <p>LVTT: Hồ Công Long</p>
+                <p>GVHD: Trương Quang Vinh</p>
+            </div>
         </div>
 
         <div class="card">
@@ -218,7 +273,9 @@
                 <button class="range-btn" data-hours="168">1 tuần</button>
                 <button class="range-btn" data-hours="720">1 tháng</button>
                 <button class="range-btn" data-hours="8760">1 năm</button>
-                <button id="autoRefreshToggle" style="margin-left:20px; padding:8px 12px; border-radius:8px; border:2px solid #48bb78; background:#48bb78; color:#fff; cursor:pointer;">Tự động: BẬT</button>
+                <button id="autoRefreshToggle"
+                    style="margin-left:20px; padding:8px 12px; border-radius:8px; border:2px solid #48bb78; background:#48bb78; color:#fff; cursor:pointer;">Tự
+                    động: BẬT</button>
                 <span id="rangeStatus" style="margin-left:auto; color:#666; font-size:0.9rem;"></span>
             </div>
             <div id="allCharts">
@@ -245,32 +302,63 @@
         let autoRefreshInterval = null;
         let autoRefreshEnabled = true;
         // Store canonical series per device to simplify incremental updates
-        // Structure: Map<deviceId, Array<{ t: number /*ms*/, magnitude: number, baseline: number }>>
+        // Structure: Map<deviceId, Array<{ t: number /*ms*/, magnitude: number, baseline: number, is_abnormal: boolean, severity: string }>>
         const deviceDataStore = new Map();
         // Track socket connection status to gate polling
         let socketConnected = false;
 
+        // Plugin to draw red background for disconnection periods
+        const disconnectionPlugin = {
+            id: 'disconnectionPlugin',
+            beforeDraw: (chart, args, options) => {
+                const { ctx, chartArea: { top, bottom, left, right, width, height }, scales: { x } } = chart;
+                const gaps = options.gaps || [];
+
+                if (!gaps.length) return;
+
+                ctx.save();
+                ctx.fillStyle = 'rgba(255, 99, 132, 0.2)'; // Red with opacity
+
+                gaps.forEach(gap => {
+                    const startPixel = x.getPixelForValue(gap.start);
+                    const endPixel = x.getPixelForValue(gap.end);
+
+                    // Ensure the rectangle is within the chart area
+                    const drawStart = Math.max(left, startPixel);
+                    const drawEnd = Math.min(right, endPixel);
+
+                    if (drawEnd > drawStart) {
+                        ctx.fillRect(drawStart, top, drawEnd - drawStart, height);
+                    }
+                });
+
+                ctx.restore();
+            }
+        };
+
+        Chart.register(disconnectionPlugin);
+
         // Initialize application
-        document.addEventListener('DOMContentLoaded', function() {
+        document.addEventListener('DOMContentLoaded', function () {
             console.log('🚀 Application starting...');
-            
+
             try {
                 console.log('🔌 Initializing socket...');
                 initializeSocket();
-                
+
                 console.log('📱 Loading devices...');
                 loadDevicesAndRenderAll();
 
                 initRangeButtons();
                 initAutoRefreshToggle();
                 updateRangeStatus();
-                
+
                 console.log('🚨 Loading alerts...');
                 loadAlerts();
-                
+
                 // Start auto-refresh
                 startAutoRefresh();
-                
+
                 console.log('✅ Application initialized successfully');
             } catch (error) {
                 console.error('❌ Application initialization failed:', error);
@@ -281,13 +369,13 @@
         function initializeSocket() {
             console.log('🔌 Creating socket connection...');
             socket = io();
-            
-            socket.on('connect', function() {
+
+            socket.on('connect', function () {
                 console.log('✅ Connected to server');
                 socketConnected = true;
             });
 
-            socket.on('sensor_data', function(data) {
+            socket.on('sensor_data', function (data) {
                 console.log('📡 Received realtime data:', data);
                 const chartInfo = deviceCharts.get(data.device_id);
                 if (!chartInfo) {
@@ -296,19 +384,19 @@
                 }
                 console.log('✅ Adding data to chart for device:', data.device_id);
                 appendRealtimePoint(chartInfo, data);
-                
+
                 // Update battery voltage display if present
                 if (data.battery_voltage_mv !== undefined) {
                     updateBatteryVoltage(data.device_id, data.battery_voltage_mv);
                 }
             });
 
-            socket.on('disconnect', function() {
+            socket.on('disconnect', function () {
                 console.log('❌ Disconnected from server');
                 socketConnected = false;
             });
 
-            socket.on('connect_error', function(error) {
+            socket.on('connect_error', function (error) {
                 console.error('❌ Socket connection error:', error);
             });
         }
@@ -384,12 +472,12 @@
             if (autoRefreshInterval) {
                 clearInterval(autoRefreshInterval);
             }
-            
+
             if (!autoRefreshEnabled) {
                 console.log('⏸️ Auto-refresh disabled');
                 return;
             }
-            
+
             // Auto-refresh every 30 seconds
             autoRefreshInterval = setInterval(() => {
                 if (autoRefreshEnabled) {
@@ -401,7 +489,7 @@
                     loadAlerts();
                 }
             }, 30000);
-            
+
             console.log('✅ Auto-refresh started (30s interval)');
         }
 
@@ -417,10 +505,10 @@
         function initAutoRefreshToggle() {
             const toggleBtn = document.getElementById('autoRefreshToggle');
             if (!toggleBtn) return;
-            
+
             toggleBtn.addEventListener('click', () => {
                 autoRefreshEnabled = !autoRefreshEnabled;
-                
+
                 if (autoRefreshEnabled) {
                     startAutoRefresh();
                     toggleBtn.textContent = 'Tự động: BẬT';
@@ -439,10 +527,10 @@
         function createDeviceChartCard(device) {
             const card = document.createElement('div');
             card.className = 'device-chart-card';
-            
+
             const title = document.createElement('h4');
-            title.textContent = `${device.device_name || device.device_id} — ${device.location || 'Unknown'}`;
-            
+            title.textContent = `${device.device_name || device.device_id}${(device.location && device.location !== 'Unknown') ? ' — ' + device.location : ''}`;
+
             // Battery voltage display
             const batteryContainer = document.createElement('div');
             batteryContainer.style.cssText = 'display: flex; align-items: center; gap: 10px; margin-bottom: 15px; padding: 10px; background: #f7fafc; border-radius: 8px;';
@@ -455,14 +543,28 @@
             batteryValue.style.cssText = 'font-size: 1.1rem; font-weight: bold; color: #667eea;';
             batteryContainer.appendChild(batteryLabel);
             batteryContainer.appendChild(batteryValue);
-            
+
+            // Status indicator
+            const statusContainer = document.createElement('div');
+            statusContainer.style.cssText = 'display: flex; align-items: center; gap: 10px; margin-bottom: 15px; padding: 10px; background: #f7fafc; border-radius: 8px;';
+            const statusLabel = document.createElement('span');
+            statusLabel.textContent = '📡 Trạng thái:';
+            statusLabel.style.cssText = 'font-weight: 600; color: #4a5568;';
+            const statusValue = document.createElement('span');
+            statusValue.id = `status_${device.device_id}`;
+            statusValue.textContent = 'Đang kiểm tra...';
+            statusValue.style.cssText = 'font-weight: bold; color: #667eea;';
+            statusContainer.appendChild(statusLabel);
+            statusContainer.appendChild(statusValue);
+
             const container = document.createElement('div');
             container.className = 'chart-container';
             const canvas = document.createElement('canvas');
             container.appendChild(canvas);
-            
+
             card.appendChild(title);
             card.appendChild(batteryContainer);
+            card.appendChild(statusContainer);
             card.appendChild(container);
 
             // Initialize battery value from device meta if available (write directly to created element)
@@ -472,8 +574,8 @@
                     setBatteryDisplay(batteryValue, mv);
                 }
             }
-                
-                const ctx = canvas.getContext('2d');
+
+            const ctx = canvas.getContext('2d');
             const chart = new Chart(ctx, {
                 type: 'line',
                 data: {
@@ -485,7 +587,11 @@
                             backgroundColor: 'rgba(102, 126, 234, 0.1)',
                             tension: 0.3,
                             fill: true,
-                            pointRadius: 0
+                            pointRadius: 3, // Show points for visibility
+                            pointHoverRadius: 5,
+                            pointBackgroundColor: [], // Will be set dynamically based on is_abnormal
+                            pointBorderColor: [], // Will be set dynamically
+                            pointBorderWidth: 1
                         },
                         {
                             label: 'Baseline',
@@ -506,7 +612,7 @@
                     scales: {
                         x: {
                             type: 'time',
-                            time: { 
+                            time: {
                                 tooltipFormat: 'dd/MM/yyyy HH:mm:ss',
                                 displayFormats: {
                                     second: 'HH:mm:ss',
@@ -522,19 +628,25 @@
                     },
                     plugins: {
                         legend: { display: true, position: 'top' },
-                        tooltip: { 
-                            mode: 'index', 
+                        tooltip: {
+                            mode: 'index',
                             intersect: false,
                             callbacks: {
-                                title: function(context) {
+                                title: function (context) {
                                     const date = context[0].raw.x;
                                     return new Date(date).toLocaleString('vi-VN');
                                 }
                             }
                         }
                     },
-                    interaction: { mode: 'nearest', axis: 'x', intersect: false }
-                }
+                    interaction: { mode: 'nearest', axis: 'x', intersect: false },
+                    plugins: {
+                        disconnectionPlugin: {
+                            gaps: [] // Will be populated dynamically
+                        }
+                    }
+                },
+                plugins: [disconnectionPlugin]
             });
 
             return { card, chart };
@@ -546,22 +658,22 @@
             try {
                 const response = await fetch('/api/devices?include_simulated=0&_ts=' + Date.now(), { cache: 'no-store' });
                 console.log('📡 API Response status:', response.status);
-                
+
                 if (!response.ok) {
                     throw new Error(`HTTP error! status: ${response.status}`);
                 }
-                
+
                 const devices = await response.json();
                 console.log('📱 Devices received:', devices);
-                
+
                 const container = document.getElementById('allCharts');
                 container.innerHTML = '';
-                
+
                 if (devices.length === 0) {
                     container.innerHTML = '<div class="no-data">Không có thiết bị hoạt động</div>';
                     return;
                 }
-                
+
                 for (const device of devices) {
                     const { card, chart } = createDeviceChartCard(device);
                     container.appendChild(card);
@@ -587,7 +699,7 @@
                 if (!response.ok) throw new Error(`HTTP ${response.status}`);
                 const result = await response.json();
                 console.log(`📊 Received data for ${deviceId}:`, result.data.length, 'points');
-                
+
                 const chartInfo = deviceCharts.get(deviceId);
                 if (!chartInfo) {
                     console.error('❌ No chart found for device:', deviceId);
@@ -598,7 +710,9 @@
                 const series = raw.map(d => ({
                     t: new Date(d.timestamp).getTime(),
                     magnitude: d.vibration_magnitude,
-                    baseline: d.vibration_magnitude * 0.8
+                    baseline: d.vibration_magnitude * 0.8,
+                    is_abnormal: d.is_abnormal === 1 || d.is_abnormal === true,
+                    severity: 'NORMAL' // Historical data doesn't have severity, default to NORMAL
                 }));
                 deviceDataStore.set(deviceId, series);
                 // Render from store constrained to current window
@@ -635,10 +749,31 @@
             const series = (data || []).map(d => ({
                 t: new Date(d.timestamp).getTime(),
                 magnitude: d.vibration_magnitude,
-                baseline: d.vibration_magnitude * 0.8
+                baseline: d.vibration_magnitude * 0.8,
+                is_abnormal: d.is_abnormal === 1 || d.is_abnormal === true,
+                severity: 'NORMAL'
             }));
             deviceDataStore.set(deviceId, series);
             renderChartFromStore(deviceId, chartInfo);
+        }
+
+        // Helper function to get point color based on abnormality and severity
+        function getPointColor(is_abnormal, severity) {
+            if (!is_abnormal) {
+                return 'rgba(102, 126, 234, 0.6)'; // Normal blue with transparency
+            }
+
+            // Color code based on severity
+            switch (severity) {
+                case 'CRITICAL':
+                    return '#f56565'; // Red
+                case 'HIGH':
+                    return '#ed8936'; // Orange
+                case 'MEDIUM':
+                    return '#f6e05e'; // Yellow
+                default:
+                    return '#48bb78'; // Green for abnormal but low severity
+            }
         }
 
         // Render helper from canonical store, trimming outside current range
@@ -654,11 +789,68 @@
             const rangeMs = currentRangeHours * 3600 * 1000;
             const start = end - rangeMs;
             const windowed = series.filter(p => p.t >= start && p.t <= end);
+
+            // Update chart data with color coding
             chartInfo.chart.data.datasets[0].data = windowed.map(p => ({ x: new Date(p.t), y: p.magnitude }));
             chartInfo.chart.data.datasets[1].data = windowed.map(p => ({ x: new Date(p.t), y: p.baseline }));
+
+            // Apply dynamic colors based on abnormality
+            const colors = windowed.map(p => getPointColor(p.is_abnormal, p.severity));
+            chartInfo.chart.data.datasets[0].pointBackgroundColor = colors;
+            chartInfo.chart.data.datasets[0].pointBorderColor = colors;
+
             updateChartTimeRange(chartInfo.chart);
             chartInfo.chart.update();
             if (windowed.length > 0) deviceLastTimestamp.set(deviceId, windowed[windowed.length - 1].t);
+
+            // Calculate gaps > 12 minutes (720,000 ms)
+            const gaps = [];
+            const GAP_THRESHOLD = 12 * 60 * 1000; // 12 minutes
+
+            for (let i = 1; i < windowed.length; i++) {
+                const diff = windowed[i].t - windowed[i - 1].t;
+                if (diff > GAP_THRESHOLD) {
+                    gaps.push({
+                        start: windowed[i - 1].t,
+                        end: windowed[i].t
+                    });
+                }
+            }
+
+            // Check for gap at the end (if no data recently)
+            const now = Date.now();
+            const lastPoint = windowed[windowed.length - 1];
+
+            if (lastPoint && (now - lastPoint.t > GAP_THRESHOLD)) {
+                gaps.push({
+                    start: lastPoint.t,
+                    end: now
+                });
+                // Update status text
+                updateDeviceStatus(deviceId, false, lastPoint.t);
+            } else {
+                // Update status text (Active)
+                updateDeviceStatus(deviceId, true, lastPoint ? lastPoint.t : null);
+            }
+
+            // Update plugin options
+            chartInfo.chart.options.plugins.disconnectionPlugin.gaps = gaps;
+
+            chartInfo.chart.update();
+        }
+
+        function updateDeviceStatus(deviceId, isActive, lastTimestamp) {
+            const el = document.getElementById(`status_${deviceId}`);
+            if (!el) return;
+
+            if (isActive) {
+                el.textContent = 'Đang hoạt động';
+                el.style.color = '#48bb78'; // Green
+            } else {
+                const timeStr = lastTimestamp ? new Date(lastTimestamp).toLocaleString('vi-VN') : 'Không xác định';
+                el.textContent = `Mất kết nối (Lần cuối: ${timeStr})`;
+                el.style.color = '#f56565'; // Red
+            }
         }
 
         // Update chart time range configuration
@@ -752,7 +944,13 @@
                 // Ignore if timestamp is not strictly newer
                 return;
             }
-            series.push({ t: ts, magnitude: data.vibration_magnitude, baseline: data.baseline });
+            series.push({
+                t: ts,
+                magnitude: data.vibration_magnitude,
+                baseline: data.baseline,
+                is_abnormal: data.is_abnormal === true || data.is_abnormal === 1,
+                severity: data.severity || 'NORMAL'
+            });
             deviceDataStore.set(deviceId, series);
             // Trim outside window by time
             const end = ts;
@@ -766,7 +964,7 @@
         // Update chart with new data point
         function updateChart(data) {
             console.log('📊 Adding new data point:', data.vibration_magnitude);
-            
+
             // Use simple index for x-axis
             const newIndex = chartData.labels.length;
             chartData.labels.push(newIndex);
@@ -804,7 +1002,7 @@
         // Display alerts
         function displayAlerts(alerts) {
             const alertsList = document.getElementById('alertsList');
-            
+
             if (alerts.length === 0) {
                 alertsList.innerHTML = '<div class="no-data">Không có cảnh báo nào trong 24 giờ qua</div>';
                 return;
@@ -851,7 +1049,13 @@
                     incoming.forEach(d => {
                         const t = new Date(d.timestamp).getTime();
                         if (t > lastTsMs) {
-                            stored.push({ t, magnitude: d.vibration_magnitude, baseline: d.vibration_magnitude * 0.8 });
+                            stored.push({
+                                t,
+                                magnitude: d.vibration_magnitude,
+                                baseline: d.vibration_magnitude * 0.8,
+                                is_abnormal: d.is_abnormal === 1 || d.is_abnormal === true,
+                                severity: 'NORMAL'
+                            });
                         }
                     });
                     // Trim store to current window relative to latest t
@@ -868,4 +1072,5 @@
         }
     </script>
 </body>
+
 </html>
