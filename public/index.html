@@ -290,6 +290,38 @@
                 <div class="loading">Đang tải cảnh báo...</div>
             </div>
         </div>
+
+        <!-- AI Analysis Section -->
+        <div class="alerts-section" style="margin-top: 20px;">
+            <h3>🤖 Phân Tích AI - Dự Đoán Lỗi Máy</h3>
+            <div style="display: flex; gap: 15px; align-items: flex-end; margin: 20px 0;">
+                <div style="flex: 1;">
+                    <label for="aiDeviceSelect"
+                        style="display: block; margin-bottom: 8px; font-weight: 600; color: #4a5568;">Chọn thiết
+                        bị:</label>
+                    <select id="aiDeviceSelect"
+                        style="width: 100%; padding: 12px; border: 2px solid #e2e8f0; border-radius: 8px; font-size: 1rem;">
+                        <option value="">-- Chọn thiết bị --</option>
+                    </select>
+                </div>
+                <div style="flex: 0 0 auto;">
+                    <label for="aiRecordLimit"
+                        style="display: block; margin-bottom: 8px; font-weight: 600; color: #4a5568;">Số mẫu:</label>
+                    <input type="number" id="aiRecordLimit" value="10" min="1" max="100"
+                        style="width: 100px; padding: 12px; border: 2px solid #e2e8f0; border-radius: 8px; font-size: 1rem;">
+                </div>
+                <button id="analyzeBtn"
+                    style="padding: 12px 30px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer; transition: transform 0.2s; box-shadow: 0 4px 10px rgba(102, 126, 234, 0.3);">
+                    🚀 Phân Tích Ngay
+                </button>
+            </div>
+            <div id="aiResult"
+                style="margin-top: 20px; padding: 20px; background: #f7fafc; border-radius: 8px; display: none;">
+                <h4 style="color: #4a5568; margin-bottom: 10px;">📊 Kết quả phân tích:</h4>
+                <pre id="aiResultContent"
+                    style="white-space: pre-wrap; word-wrap: break-word; color: #2d3748; line-height: 1.6;"></pre>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -1070,6 +1102,17 @@
                 }
             }
         }
+    </script>
+
+    <!-- AI Analysis Module -->
+    <script src="ai-analysis.js"></script>
+    <script>
+        // Initialize AI analysis after DOM is ready
+        document.addEventListener('DOMContentLoaded', function () {
+            if (typeof initAIAnalysis === 'function') {
+                initAIAnalysis();
+            }
+        });
     </script>
 </body>
 

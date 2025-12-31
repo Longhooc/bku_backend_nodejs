@@ -66,7 +66,41 @@ db.serialize(() => {
         timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
         is_resolved INTEGER DEFAULT 0
     )`);
+
+    // Table for storing FFT analysis results
+    db.run(`CREATE TABLE IF NOT EXISTS fft_analysis (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        device_id TEXT NOT NULL,
+        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+        dominant_frequency REAL,
+        peak_magnitude REAL,
+        sample_count INTEGER,
+        fft_data_json TEXT,
+        gateway_id TEXT
+    )`);
 });
+
+// Helper function to find dominant frequency in FFT data
+function findDominantFrequency(fftData, sampleCount = 2048, samplingRate = 1600) {
+    let maxMagnitude = 0;
+    let maxIndex = 0;
+
+    // Skip DC component (index 0)
+    for (let i = 1; i < fftData.length && i < sampleCount / 2; i++) {
+        if (fftData[i] > maxMagnitude) {
+            maxMagnitude = fftData[i];
+            maxIndex = i;
+        }
+    }
+
+    // Calculate frequency from index
+    const frequency = (maxIndex * samplingRate) / sampleCount;
+
+    return {
+        frequency: parseFloat(frequency.toFixed(2)),
+        magnitude: parseFloat(maxMagnitude.toFixed(4))
+    };
+}
 
 // Vibration analysis functions
 class VibrationAnalyzer {
@@ -271,18 +305,34 @@ function handleSensorDataPost(req, res) {
 
             io.emit('sensor_data', emitData);
 
+            const triggerFFT = analysis.isAbnormal && analysis.severity !== 'LOW';
+
             console.log('📊 Data stored and emitted:', {
                 device_id,
                 vibration_magnitude: vibrationMagnitude.toFixed(3),
                 is_abnormal: analysis.isAbnormal,
+                severity: analysis.severity,
+                baseline: analysis.baseline.toFixed(3),
+                trigger_fft: triggerFFT,
                 timestamp: clientTimestamp
             });
+
+            // Log đặc biệt khi trigger FFT
+            if (triggerFFT) {
+                console.log('🎯 ═══════════════════════════════════════════════');
+                console.log('🎯  FFT TRIGGER ACTIVATED!');
+                console.log(`🎯  Device: ${device_id}`);
+                console.log(`🎯  Severity: ${analysis.severity}`);
+                console.log(`🎯  Magnitude: ${vibrationMagnitude.toFixed(3)} (baseline: ${analysis.baseline.toFixed(3)})`);
+                console.log('🎯 ═══════════════════════════════════════════════');
+            }
 
             res.json({
                 success: true,
                 vibration_magnitude: vibrationMagnitude,
                 is_abnormal: analysis.isAbnormal,
-                severity: analysis.severity
+                severity: analysis.severity,
+                trigger_fft: triggerFFT
             });
         });
 
@@ -291,6 +341,102 @@ function handleSensorDataPost(req, res) {
 
 // Receive sensor data from ESP32 (HTTPS app)
 app.post('/api/sensor-data', handleSensorDataPost);
+
+// Receive FFT data from Gateway
+app.post('/api/fft-data', (req, res) => {
+    console.log('📈 Received POST /api/fft-data');
+    console.log('📦 FFT Request from:', req.body.device_id);
+
+    const { device_id, fft_data, sample_count, gateway_id, timestamp } = req.body;
+
+    if (!device_id || !fft_data || !Array.isArray(fft_data)) {
+        console.error('❌ Missing required fields for FFT data');
+        return res.status(400).json({ error: 'Missing required fields: device_id, fft_data' });
+    }
+
+    console.log(`✅ FFT data received: ${fft_data.length} samples`);
+
+    // Analyze FFT data to find dominant frequency
+    const analysis = findDominantFrequency(fft_data, sample_count || 2048, 1600);
+
+    console.log(`📊 Dominant Frequency: ${analysis.frequency} Hz, Magnitude: ${analysis.magnitude}`);
+
+    // Store FFT analysis in database
+    const stmt = db.prepare(`
+        INSERT INTO fft_analysis (device_id, timestamp, dominant_frequency, peak_magnitude, sample_count, fft_data_json, gateway_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const now = new Date();
+    const vietnamTime = new Date(now.getTime() + 7 * 60 * 60 * 1000);
+    const fftTimestamp = vietnamTime.toISOString().replace('T', ' ').substring(0, 19);
+
+    // Store compressed FFT data (only every 10th point to save space)
+    const compressedFFT = fft_data.filter((_, index) => index % 10 === 0);
+    const fftDataJson = JSON.stringify(compressedFFT);
+
+    stmt.run(
+        device_id,
+        fftTimestamp,
+        analysis.frequency,
+        analysis.magnitude,
+        sample_count || fft_data.length,
+        fftDataJson,
+        gateway_id || null,
+        (err) => {
+            if (err) {
+                console.error('❌ Database error saving FFT:', err);
+                return res.status(500).json({ error: 'Database error' });
+            }
+
+            console.log('✅ FFT data stored in database');
+
+            // Emit real-time FFT data to connected clients
+            io.emit('fft_data', {
+                device_id,
+                timestamp: fftTimestamp,
+                dominant_frequency: analysis.frequency,
+                peak_magnitude: analysis.magnitude,
+                sample_count: sample_count || fft_data.length,
+                gateway_id
+            });
+
+            res.json({
+                success: true,
+                dominant_frequency: analysis.frequency,
+                peak_magnitude: analysis.magnitude,
+                message: 'FFT data processed successfully'
+            });
+        }
+    );
+
+    stmt.finalize();
+});
+
+// Get FFT analysis history for a device
+app.get('/api/fft-data/:device_id', (req, res) => {
+    const { device_id } = req.params;
+    const { limit = 50 } = req.query;
+
+    const query = `
+        SELECT id, device_id, timestamp, dominant_frequency, peak_magnitude, sample_count, gateway_id
+        FROM fft_analysis
+        WHERE device_id = ?
+        ORDER BY timestamp DESC
+        LIMIT ?
+    `;
+
+    db.all(query, [device_id, parseInt(limit)], (err, rows) => {
+        if (err) {
+            console.error('Database error:', err);
+            return res.status(500).json({ error: 'Database error' });
+        }
+
+        res.json({ device_id, data: rows });
+    });
+});
+
+
 
 // Get historical data for charts
 app.get('/api/sensor-data/:device_id', (req, res) => {
@@ -442,6 +588,119 @@ app.get('/api/alerts', (req, res) => {
     });
 });
 
+// API to collect vibration analysis data for AI
+app.get('/api/analyze-vibration', (req, res) => {
+    const { device_id, limit = 10 } = req.query;
+
+    if (!device_id) {
+        return res.status(400).json({ error: 'device_id is required' });
+    }
+
+    console.log(`🤖 Collecting vibration analysis data for ${device_id}...`);
+
+    // Get recent FFT analysis data (PRIORITY FOR AI)
+    // AI needs FFT data which is stored in fft_analysis table
+    const query = `
+        SELECT 
+            fft.device_id,
+            fft.timestamp,
+            fft.fft_data_json,
+            fft.dominant_frequency,
+            fft.peak_magnitude,
+            fft.sample_count,
+            -- Get latest sensor reading near this FFT timestamp for reference (tolerance ~7 mins)
+            (SELECT accel_x FROM sensor_data sd WHERE sd.device_id = fft.device_id AND abs(julianday(sd.timestamp) - julianday(fft.timestamp)) < 0.005 ORDER BY sd.timestamp DESC LIMIT 1) as accel_x,
+            (SELECT accel_y FROM sensor_data sd WHERE sd.device_id = fft.device_id AND abs(julianday(sd.timestamp) - julianday(fft.timestamp)) < 0.005 ORDER BY sd.timestamp DESC LIMIT 1) as accel_y,
+            (SELECT accel_z FROM sensor_data sd WHERE sd.device_id = fft.device_id AND abs(julianday(sd.timestamp) - julianday(fft.timestamp)) < 0.005 ORDER BY sd.timestamp DESC LIMIT 1) as accel_z
+        FROM fft_analysis fft
+        WHERE fft.device_id = ?
+        ORDER BY fft.timestamp DESC
+        LIMIT ?
+    `;
+
+    db.all(query, [device_id, parseInt(limit)], (err, rows) => {
+        if (err) {
+            console.error('Database error:', err);
+            return res.status(500).json({ error: 'Database error' });
+        }
+
+        if (rows.length === 0) {
+            // Fallback: If no FFT data, user might be testing without trigger
+            // Return empty list so Client handles "No FFT data" message
+            return res.json([]);
+        }
+
+        // Process rows for AI
+        const analysisData = rows.map(row => {
+            const nodeMatch = row.device_id.match(/\d+/);
+            const nodeNumber = nodeMatch ? parseInt(nodeMatch[0]) : 0;
+
+            let fftString = '';
+            let kurtosis = 0;
+            let peak = row.peak_magnitude || 0;
+            let vrms = 0; // Will calc from FFT if raw data not abundant
+
+            if (row.fft_data_json) {
+                try {
+                    const fftArray = JSON.parse(row.fft_data_json);
+
+                    // Reconstruct simplified comma string for AI prompt
+                    // AI doesn't need all decimals, 1-2 decimal places is enough to save tokens
+                    fftString = fftArray.map(n => typeof n === 'number' ? n.toFixed(1) : n).join(',');
+
+                    if (fftArray.length > 0) {
+                        // Calculate Kurtosis from FFT distribution (spectral kurtosis proxy)
+                        const mean = fftArray.reduce((a, b) => a + b, 0) / fftArray.length;
+                        const variance = fftArray.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / fftArray.length;
+                        const stdDev = Math.sqrt(variance);
+                        if (stdDev > 0) {
+                            const fourthMoment = fftArray.reduce((sum, val) => sum + Math.pow((val - mean) / stdDev, 4), 0) / fftArray.length;
+                            kurtosis = parseFloat((fourthMoment - 3).toFixed(2));
+                        }
+
+                        // Estimate VRMS from spectral density (Parseval's theorem approx)
+                        // VRMS = sqrt(sum(amplitude^2)/2) for simple peaks, but here we just take root sum square of bins
+                        const sumSquares = fftArray.reduce((sum, val) => sum + (val * val), 0);
+                        vrms = parseFloat(Math.sqrt(sumSquares / fftArray.length).toFixed(4));
+                    }
+                } catch (e) {
+                    console.error('Error parsing FFT data:', e);
+                }
+            }
+
+            // Format timestamp (Database stores Vietnam Time, so we keep it and append timezone)
+            let timestamp;
+            try {
+                // row.timestamp is like "2025-12-30 22:27:09"
+                timestamp = row.timestamp.replace(' ', 'T');
+                if (!timestamp.includes('+')) {
+                    timestamp += '+07:00'; // Explicitly mark as Vietnam Time
+                }
+            } catch (e) {
+                timestamp = new Date(row.timestamp).toISOString();
+            }
+            const rdate = row.timestamp.split(' ')[0];
+
+            return {
+                node: nodeNumber,
+                x: row.accel_x ? parseFloat(row.accel_x.toFixed(2)) : 0,
+                y: row.accel_y ? parseFloat(row.accel_y.toFixed(2)) : 0,
+                z: row.accel_z ? parseFloat(row.accel_z.toFixed(2)) : 0,
+                vrms: vrms,
+                kurtosis: kurtosis,
+                peak: peak,
+                fft: fftString, // The most important field
+                sample_count: row.sample_count, // AI needs to know this (512)
+                timestamp: timestamp,
+                rdate: rdate
+            };
+        });
+
+        console.log(`✅ Collected ${analysisData.length} records for AI analysis`);
+        res.json(analysisData);
+    });
+});
+
 // Serve main page
 app.get('/', (req, res) => {
     res.sendFile(__dirname + '/public/index.html');
@@ -471,8 +730,79 @@ httpApp.use(cors());
 httpApp.use(bodyParser.json());
 httpApp.post('/api/sensor-data', handleSensorDataPost);
 
+// Add FFT endpoint to HTTP app
+httpApp.post('/api/fft-data', (req, res) => {
+    console.log('📈 Received POST /api/fft-data (HTTP)');
+    console.log('📦 FFT Request from:', req.body.device_id);
+
+    const { device_id, fft_data, sample_count, gateway_id, timestamp } = req.body;
+
+    if (!device_id || !fft_data || !Array.isArray(fft_data)) {
+        console.error('❌ Missing required fields for FFT data');
+        return res.status(400).json({ error: 'Missing required fields: device_id, fft_data' });
+    }
+
+    console.log(`✅ FFT data received: ${fft_data.length} samples`);
+
+    // Analyze FFT data to find dominant frequency
+    const analysis = findDominantFrequency(fft_data, sample_count || 2048, 1600);
+
+    console.log(`📊 Dominant Frequency: ${analysis.frequency} Hz, Magnitude: ${analysis.magnitude}`);
+
+    // Store FFT analysis in database
+    const stmt = db.prepare(`
+        INSERT INTO fft_analysis (device_id, timestamp, dominant_frequency, peak_magnitude, sample_count, fft_data_json, gateway_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const now = new Date();
+    const vietnamTime = new Date(now.getTime() + 7 * 60 * 60 * 1000);
+    const fftTimestamp = vietnamTime.toISOString().replace('T', ' ').substring(0, 19);
+
+    // Store FULL FFT data (No compression) for AI analysis
+    // const compressedFFT = fft_data.filter((_, index) => index % 10 === 0);
+    const fftDataJson = JSON.stringify(fft_data); // Save complete spectrum
+
+    stmt.run(
+        device_id,
+        fftTimestamp,
+        analysis.frequency,
+        analysis.magnitude,
+        sample_count || fft_data.length,
+        fftDataJson,
+        gateway_id || null,
+        (err) => {
+            if (err) {
+                console.error('❌ Database error saving FFT:', err);
+                return res.status(500).json({ error: 'Database error' });
+            }
+
+            console.log('✅ FFT data stored in database');
+
+            // Emit real-time FFT data to connected clients
+            io.emit('fft_data', {
+                device_id,
+                timestamp: fftTimestamp,
+                dominant_frequency: analysis.frequency,
+                peak_magnitude: analysis.magnitude,
+                sample_count: sample_count || fft_data.length,
+                gateway_id
+            });
+
+            res.json({
+                success: true,
+                dominant_frequency: analysis.frequency,
+                peak_magnitude: analysis.magnitude,
+                message: 'FFT data processed successfully'
+            });
+        }
+    );
+
+    stmt.finalize();
+});
+
 http.createServer(httpApp).listen(HTTP_PORT, () => {
-    console.log(`HTTP Server (limited) running at http://localhost:${HTTP_PORT} for /api/sensor-data`);
+    console.log(`HTTP Server (limited) running at http://localhost:${HTTP_PORT} for /api/sensor-data and /api/fft-data`);
 });
 // Graceful shutdown
 process.on('SIGINT', () => {
