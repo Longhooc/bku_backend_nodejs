@@ -8,6 +8,12 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+
+    <!-- Markdown and Math rendering -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -225,6 +231,95 @@
             font-size: 1.1rem;
         }
 
+        /* AI Result Markdown Styling */
+        .ai-result-content table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 15px 0;
+            font-size: 0.85rem;
+        }
+
+        .ai-result-content table th,
+        .ai-result-content table td {
+            border: 1px solid #e2e8f0;
+            padding: 8px 12px;
+            text-align: left;
+        }
+
+        .ai-result-content table th {
+            background: #f7fafc;
+            font-weight: 600;
+            color: #4a5568;
+        }
+
+        .ai-result-content table tr:nth-child(even) {
+            background: #f9fafb;
+        }
+
+        .ai-result-content h1,
+        .ai-result-content h2,
+        .ai-result-content h3,
+        .ai-result-content h4 {
+            color: #2d3748;
+            margin-top: 20px;
+            margin-bottom: 10px;
+        }
+
+        .ai-result-content h3 {
+            font-size: 1.1rem;
+            border-bottom: 2px solid #e2e8f0;
+            padding-bottom: 5px;
+        }
+
+        .ai-result-content ul,
+        .ai-result-content ol {
+            margin: 10px 0;
+            padding-left: 25px;
+        }
+
+        .ai-result-content li {
+            margin: 5px 0;
+        }
+
+        .ai-result-content code {
+            background: #f7fafc;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.85em;
+        }
+
+        .ai-result-content pre {
+            background: #f7fafc;
+            padding: 12px;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin: 10px 0;
+        }
+
+        .ai-result-content hr {
+            border: none;
+            border-top: 2px solid #e2e8f0;
+            margin: 20px 0;
+        }
+
+        .ai-result-content strong {
+            font-weight: 700;
+            color: #1a202c;
+        }
+
+        .ai-result-content em {
+            font-style: italic;
+        }
+
+        .ai-result-content blockquote {
+            border-left: 4px solid #667eea;
+            padding-left: 15px;
+            margin: 15px 0;
+            color: #4a5568;
+            font-style: italic;
+        }
+
         @media (max-width: 768px) {
             .header {
                 flex-direction: column;
@@ -291,37 +386,7 @@
             </div>
         </div>
 
-        <!-- AI Analysis Section -->
-        <div class="alerts-section" style="margin-top: 20px;">
-            <h3>🤖 Phân Tích AI - Dự Đoán Lỗi Máy</h3>
-            <div style="display: flex; gap: 15px; align-items: flex-end; margin: 20px 0;">
-                <div style="flex: 1;">
-                    <label for="aiDeviceSelect"
-                        style="display: block; margin-bottom: 8px; font-weight: 600; color: #4a5568;">Chọn thiết
-                        bị:</label>
-                    <select id="aiDeviceSelect"
-                        style="width: 100%; padding: 12px; border: 2px solid #e2e8f0; border-radius: 8px; font-size: 1rem;">
-                        <option value="">-- Chọn thiết bị --</option>
-                    </select>
-                </div>
-                <div style="flex: 0 0 auto;">
-                    <label for="aiRecordLimit"
-                        style="display: block; margin-bottom: 8px; font-weight: 600; color: #4a5568;">Số mẫu:</label>
-                    <input type="number" id="aiRecordLimit" value="10" min="1" max="100"
-                        style="width: 100px; padding: 12px; border: 2px solid #e2e8f0; border-radius: 8px; font-size: 1rem;">
-                </div>
-                <button id="analyzeBtn"
-                    style="padding: 12px 30px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer; transition: transform 0.2s; box-shadow: 0 4px 10px rgba(102, 126, 234, 0.3);">
-                    🚀 Phân Tích Ngay
-                </button>
-            </div>
-            <div id="aiResult"
-                style="margin-top: 20px; padding: 20px; background: #f7fafc; border-radius: 8px; display: none;">
-                <h4 style="color: #4a5568; margin-bottom: 10px;">📊 Kết quả phân tích:</h4>
-                <pre id="aiResultContent"
-                    style="white-space: pre-wrap; word-wrap: break-word; color: #2d3748; line-height: 1.6;"></pre>
-            </div>
-        </div>
+
     </div>
 
     <script>
@@ -599,6 +664,12 @@
             card.appendChild(statusContainer);
             card.appendChild(container);
 
+            // Add AI Analysis section
+            if (typeof createDeviceAISection === 'function') {
+                const aiSection = createDeviceAISection(device.device_id);
+                card.appendChild(aiSection);
+            }
+
             // Initialize battery value from device meta if available (write directly to created element)
             if (device.last_battery_voltage_mv !== undefined && device.last_battery_voltage_mv !== null) {
                 const mv = Number(device.last_battery_voltage_mv);
@@ -712,6 +783,10 @@
                     deviceCharts.set(device.device_id, { chart, device });
                     // Load historical data for each device
                     loadHistoricalForDevice(device.device_id);
+                    // Load FFT events for AI analysis
+                    if (typeof loadFFTEvents === 'function') {
+                        loadFFTEvents(device.device_id);
+                    }
                 }
 
             } catch (error) {
@@ -1106,14 +1181,6 @@
 
     <!-- AI Analysis Module -->
     <script src="ai-analysis.js"></script>
-    <script>
-        // Initialize AI analysis after DOM is ready
-        document.addEventListener('DOMContentLoaded', function () {
-            if (typeof initAIAnalysis === 'function') {
-                initAIAnalysis();
-            }
-        });
-    </script>
 </body>
 
 </html>
