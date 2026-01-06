@@ -78,11 +78,11 @@ Dưới đây là dữ liệu rung động thu thập được từ cảm biến
 THÔNG SỐ KỸ THUẬT:
 - Tốc độ lấy mẫu (Sample Rate): 1600 Hz
 - Số mẫu FFT (Sample Count): 2048 (1024 bin tần số)
-- Đơn vị gia tốc: m/s² (hoặc g)
+- Đơn vị vận tốc: mm/s
 - Dữ liệu FFT: Là mảng biên độ (amplitude) của các bin tần số, đã được rút gọn để tiết kiệm token.
 
 YÊU CẦU PHÂN TÍCH:
-1. Đánh giá tình trạng tổng quan (Bình thường / Cảnh báo / Nguy hiểm) dựa trên VRMS và Peak.
+1. Đánh giá tình trạng tổng quan (Bình thường / Cảnh báo / Nguy hiểm) dựa trên VRMS, Kurtosis  và Peak theo tiêu chuẩn ISO 10816.
 2. Phân tích phổ tần số (FFT) để tìm các đỉnh tần số trội (Dominant Frequencies).
 3. Dự đoán các lỗi tiềm ẩn (ví dụ: Mất cân bằng - Unbalance, Lệch trục - Misalignment, Lỗi vòng bi - Bearing Fault, Lỗi bánh răng, Lỏng cơ khí...).
 4. Đưa ra khuyến nghị bảo trì cụ thể.
